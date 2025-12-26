@@ -1,0 +1,65 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: gopher-redis
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data # This keeps Redis data alive even if the container stops
+    networks:
+      - gopher-net
+
+  gopher-proxy:
+    build:
+      context: .
+      args:
+        - APP_NAME=. # proxy is in root (.)
+    container_name: gopher-proxy
+    ports:
+      - "8080:8080"
+      - "2112:2112" # Metrics Port
+    environment:
+      - REDIS_URL=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - gopher-net
+  prometheus:
+    image: prom/prometheus
+    container_name: gopher-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - gopher-net
+
+  grafana:
+    image: grafana/grafana
+    container_name: gopher-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+    networks:
+      - gopher-net
+  sentinel:
+    build:
+      context: .
+      args:
+        - APP_NAME=sentinel # Build the sentinel app from /sentinel folder
+      #dockerfile: Dockerfile # You can use the same Multi-stage Dockerfile!
+    container_name: gopher-sentinel
+    environment:
+      - REDIS_URL=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - gopher-net
+
+networks:
+  gopher-net:
+    driver: bridge
+
+volumes:
+  redis_data: # <--- CRITICAL: This defines the volume for the whole project
