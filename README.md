@@ -16,7 +16,7 @@ The system follows a three-tier distributed architecture:
 
 ### Architecture Diagram
 
-![arch diagram](src/arch-diagram.png)
+![arch diagram](assets/arch-diagram.png)
 ---
 
 ## Key Features
