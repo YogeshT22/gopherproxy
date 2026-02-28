@@ -19,6 +19,12 @@ func main() {
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 
+	_, err := rdb.Ping(ctx).Result()
+	if err != nil {
+		log.Fatalf("Redis connection failed: %v", err)
+	}
+	log.Println("Connected to Redis at", redisAddr)
+
 	// Ports we want to monitor on the host machine
 	targets := []string{
 		"host.docker.internal:8081",
@@ -46,4 +52,5 @@ func main() {
 		}
 		time.Sleep(2 * time.Second)
 	}
+
 }

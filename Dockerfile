@@ -17,24 +17,23 @@ RUN go mod download
 # Copy the rest of the source code
 COPY . .
 
+# IMPORTANT: change working directory to the selected app
+WORKDIR /app/${APP_NAME}
+
 # Build the binary
 # -ldflags="-s -w" removes debug info to shrink the size
 # CGO_ENABLED=0 makes it a static binary (no OS dependencies)
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o gopher-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o app .
 
-# --- STAGE 2: The Final Image ---
+# --- STAGE 2 ---
 FROM alpine:3.18
-WORKDIR /usr/local/bin/
 
-# Security: Create a non-privileged user
+ARG APP_NAME=gopher-proxy
+
+WORKDIR /usr/local/bin/
 RUN adduser -D gopheruser
 USER gopheruser
 
-# Copy only the compiled binary from the builder
-COPY --from=builder /app/gopher-proxy .
+COPY --from=builder /app/${APP_NAME}/app .
 
-# Standard Proxy Port
-EXPOSE 8080
-
-# Start the proxy
-ENTRYPOINT ["./gopher-proxy"]
+ENTRYPOINT ["./app"]

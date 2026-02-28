@@ -40,7 +40,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - grafana_data:/var/lib/grafana
     networks:
       - gopher-net
   sentinel:
@@ -63,3 +63,4 @@ networks:
 
 volumes:
   redis_data: # <--- CRITICAL: This defines the volume for the whole project
+  grafana_data: # <--- CRITICAL: This defines the volume for the whole project
