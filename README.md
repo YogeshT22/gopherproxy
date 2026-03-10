@@ -1,4 +1,4 @@
-# GopherProxy & Sentinel: Dynamic API Gateway & a custom-built Data Plane (Load Balancer).
+# GopherProxy & Sentinel: Go-based Layer 7 Load Balancer & Service Registry
 
 ![alt text](https://img.shields.io/badge/Language-Go-00ADD8?style=flat-square&logo=go) ![alt text](https://img.shields.io/badge/Container-Docker-2496ED?style=flat-square&logo=docker)
 
@@ -10,7 +10,7 @@
 
 ---
 
-_**NOTE**_: _This project is a learning exercise and should not be used in production environments. It is designed to demonstrate core concepts of service discovery, load balancing, and observability in a simplified manner.
+_**NOTE**_: \_This project is a learning exercise and should not be used in production environments. It is designed to demonstrate core concepts of service discovery, load balancing, and observability in a simplified manner.
 
 ---
 
