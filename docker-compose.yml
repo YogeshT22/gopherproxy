@@ -1,66 +1,153 @@
 services:
+  # ── Redis ────────────────────────────────────────────────────────────────
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     container_name: gopher-redis
+    # No need to expose Redis to the host in production; keep it internal.
+    # Expose only for local debugging (remove in a real prod deployment).
     ports:
       - "16379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data # This keeps Redis data alive even if the container stops
+      - redis_data:/data
     networks:
       - gopher-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
+  # ── GopherProxy (Data Plane) ─────────────────────────────────────────────
   gopher-proxy:
     build:
       context: .
       args:
-        - APP_NAME=. # proxy is in root (.)
+        - APP_NAME=. # proxy lives in the repo root
+        - VERSION=${VERSION:-dev}
+        - COMMIT=${COMMIT:-unknown}
+    image: gopherproxy:${VERSION:-dev}
     container_name: gopher-proxy
     ports:
       - "8080:8080"
-      - "2112:2112" # Metrics Port
+      - "2112:2112" # Prometheus metrics
     environment:
       - REDIS_URL=redis:6379
+      - PROXY_PORT=8080
+      - METRICS_PORT=2112
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - gopher-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2112/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 128M
+
+  # ── Sentinel (Control Plane) ─────────────────────────────────────────────
+  sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile.sentinel
+      args:
+        - VERSION=${VERSION:-dev}
+        - COMMIT=${COMMIT:-unknown}
+    image: gopher-sentinel:${VERSION:-dev}
+    container_name: gopher-sentinel
+    environment:
+      - REDIS_URL=redis:6379
+      # Override monitored backends without rebuilding the image.
+      - SENTINEL_TARGETS=host.docker.internal:8081,host.docker.internal:8082,host.docker.internal:8083
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Linux host resolution
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gopher-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+
+  # ── Prometheus ───────────────────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v3.2.1
     container_name: gopher-prometheus
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle" # allows hot-reload via POST /-/reload
     ports:
       - "9090:9090"
     networks:
       - gopher-net
+    restart: unless-stopped
+    depends_on:
+      gopher-proxy:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
+  # ── Grafana ──────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:11.6.0
     container_name: gopher-grafana
     ports:
       - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - gopher-net
-  sentinel:
-    build:
-      context: .
-      args:
-        - APP_NAME=sentinel # Build the sentinel app from /sentinel folder
-      #dockerfile: Dockerfile # You can use the same Multi-stage Dockerfile!
-    container_name: gopher-sentinel
-    environment:
-      - REDIS_URL=redis:6379
+    restart: unless-stopped
     depends_on:
-      - redis
-    networks:
-      - gopher-net
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
 networks:
   gopher-net:
     driver: bridge
 
 volumes:
-  redis_data: # <--- CRITICAL: This defines the volume for the whole project
-  grafana_data: # <--- CRITICAL: This defines the volume for the whole project
+  redis_data:
+  grafana_data:
+  prometheus_data:

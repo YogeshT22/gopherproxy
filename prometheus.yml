@@ -1,7 +1,31 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s # How often to scrape targets (default Prometheus recommendation)
+  evaluation_interval: 15s # How often to evaluate alerting rules
+  scrape_timeout: 10s
 
+# ── Alerting ────────────────────────────────────────────────────────────────
+# Uncomment and point to your Alertmanager when ready.
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+# ── Rule files ───────────────────────────────────────────────────────────────
+# rule_files:
+#   - "alerts/*.yml"
+
+# ── Scrape configs ───────────────────────────────────────────────────────────
 scrape_configs:
   - job_name: "gopher_proxy"
     static_configs:
       - targets: ["gopher-proxy:2112"]
+    # Only keep metrics that belong to this project to reduce cardinality.
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "gopherproxy_.+"
+        action: keep
+
+  # Self-monitoring: scrape Prometheus itself.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

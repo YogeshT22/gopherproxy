@@ -1,0 +1,33 @@
+# ── Git ───────────────────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Dev/editor files ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS junk ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Go build artefacts ────────────────────────────────────────────────────
+*.exe
+*.test
+*.out
+
+# ── Documentation & assets (not needed in the image) ─────────────────────
+README.md
+assets/
+mock_backends/
+grafana/
+prometheus.yml
+
+# ── Docker files (not needed inside the image) ────────────────────────────
+Dockerfile
+docker-compose.yml
+Makefile
