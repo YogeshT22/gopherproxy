@@ -1,12 +1,8 @@
-<div align="center">
-
 # GopherProxy & Sentinel
 
 **A production-grade reverse proxy with dynamic service discovery, per-IP rate limiting, and full observability - built in Go.**
 
 [![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev) [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docs.docker.com/compose/) [![Redis](https://img.shields.io/badge/Redis-7.4-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io) [![Prometheus](https://img.shields.io/badge/Prometheus-v3.2.1-E6522C?style=flat-square&logo=prometheus&logoColor=white)](https://prometheus.io) [![Grafana](https://img.shields.io/badge/Grafana-11.6.0-F46800?style=flat-square&logo=grafana&logoColor=white)](https://grafana.com) [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-
-</div>
 
 ![Logo](assets/logo.png)
 
@@ -22,34 +18,36 @@ The entire stack ships as a single `docker compose up` with Prometheus scraping 
 
 ## Architecture
 
-```
-                           ┌──────────────────────────────┐
-  HTTP Clients ───────────▶│       GopherProxy :8080      │
-                           │  per-IP rate limiter (burst=5)│
-                           │  round-robin (skip dead)      │
-                           └──────────────┬───────────────┘
-                                          │ proxies to
-                   ┌──────────────────────┼──────────────────────┐
-                   ▼                      ▼                      ▼
-             Backend :8081          Backend :8082          Backend :8083
-                   ▲                      ▲                      ▲
-                   └──────────────────────┴──────────────────────┘
-                                          │ TCP probe every 2s
-                           ┌──────────────┴───────────────┐
-                           │         Sentinel             │
-                           └──────────────┬───────────────┘
-                                          │ SAdd / SRem
-                           ┌──────────────▼───────────────┐
-                           │     Redis  (gopher_backends) │
-                           └──────────────┬───────────────┘
-                                          │ SMembers every 5s
-                           ┌──────────────▼───────────────┐
-                           │       GopherProxy pool       │
-                           └──────────────────────────────┘
+```mermaid
+flowchart LR
+    Clients[HTTP Clients] --> Proxy[GopherProxy :8080\nRate limit + round-robin]
+    Proxy --> B1[Backend :8081]
+    Proxy --> B2[Backend :8082]
+    Proxy --> B3[Backend :8083]
 
-  GopherProxy :2112/metrics ◀── Prometheus scrape (15s)
-  Prometheus ◀──────────────── Grafana queries
+    Sentinel[Sentinel\nTCP health checks] --> Redis[(Redis\ngopher_backends)]
+    Redis --> Proxy
+
+    B1 --> Sentinel
+    B2 --> Sentinel
+    B3 --> Sentinel
+
+    Proxy --> Metrics[Prometheus metrics :2112/metrics]
+    Metrics --> Prometheus[Prometheus]
+    Prometheus --> Grafana[Grafana Dashboard]
+
+    classDef data fill:#e8f4ff,stroke:#1f6feb,color:#0b1f33;
+    classDef control fill:#fff4e5,stroke:#d97706,color:#4a2c0a;
+    classDef storage fill:#eefbf0,stroke:#16a34a,color:#11331a;
+    classDef obs fill:#f3e8ff,stroke:#9333ea,color:#2d113f;
+
+    class Proxy,B1,B2,B3,Metrics data;
+    class Sentinel control;
+    class Redis storage;
+    class Prometheus,Grafana obs;
 ```
+
+> The Mermaid diagram above shows the data plane, control plane, registry, and observability stack in one view.
 
 ---
 
@@ -86,7 +84,6 @@ The entire stack ships as a single `docker compose up` with Prometheus scraping 
 ### Operations
 
 - **4 Prometheus metrics** —
-
   - `gopherproxy_processed_requests_total`, `gopherproxy_dropped_requests_total`, `gopherproxy_active_backends`, `gopherproxy_request_duration_seconds` histogram (per-backend label)
 
 - **7-panel Grafana dashboard** — auto-provisioned; request rate, p50/p95/p99 latency, active backends gauge + timeseries, totals, success rate %
@@ -350,6 +347,141 @@ curl -s -X POST http://localhost:9090/-/reload
 | `github.com/prometheus/client_golang` | v1.23.2 | Metrics instrumentation   |
 | `github.com/redis/go-redis/v9`        | v9.17.2 | Redis client              |
 | `golang.org/x/time`                   | v0.14.0 | Token bucket rate limiter |
+
+---
+
+## Load Testing with k6
+
+This project includes **k6** load test scenarios to validate performance claims. k6 is a modern, scriptable load testing tool that measures throughput, latency percentiles, and error rates.
+
+### Prerequisites
+
+Install k6:
+
+```bash
+# macOS
+brew install k6
+
+# Windows (using chocolatey)
+choco install k6
+
+# Linux
+sudo apt-get install k6
+
+# or download from https://k6.io/docs/getting-started/installation
+```
+
+### Running Load Tests
+
+> **Note:** Keep the full stack running (`make up` + `make mock-backends`) in one terminal before running k6 tests.
+
+#### 1. Smoke Test (quick check — 30s)
+
+```bash
+make k6-smoke
+# 10 concurrent users for 30 seconds
+# ✔ Verifies proxying is working
+# ✔ Baseline latency measurement
+```
+
+#### 2. Full Load Test (5–6 minutes)
+
+```bash
+make k6-load
+# Ramps up: 0 → 100 → 300 → 500 users
+# Sustains 500 concurrent users for 3 minutes
+# ✔ Measures sustained throughput (target: ~4,200 req/s)
+# ✔ Captures p95/p99 latency (target: <35ms)
+# ✔ Monitors rate-limiter rejection rate (~12% under spike)
+```
+
+#### 3. Spike Test (sudden load jump — 3+ minutes)
+
+```bash
+make k6-spike
+# 10 users → sudden jump to 500 in 5 seconds
+# ✔ Stress tests rapid scale-up
+# ✔ Verifies no crashes or goroutine leaks
+# ✔ Measures latency under immediate load
+```
+
+#### 4. Sustained Load Test (5 minutes)
+
+```bash
+make k6-sustained
+# Constant 200 concurrent users for 5 minutes
+# ✔ Real-world scenario (not ramped, constant)
+# ✔ Detects slow memory leaks
+# ✔ Validates graceful shutdown after sustained load
+```
+
+### Expected Results
+
+**On typical hardware (4-core i5, 8 GB RAM):**
+
+| Metric             | Smoke Test | Load Test   | Spike Test  | Sustained (200 CU) |
+| ------------------ | ---------- | ----------- | ----------- | ------------------ |
+| Throughput (req/s) | 500–800    | 4,000–4,500 | 3,500–4,200 | 2,500–3,000        |
+| p50 latency        | 2–5 ms     | 10–15 ms    | 8–12 ms     | 6–10 ms            |
+| p95 latency        | 8–15 ms    | 25–35 ms    | 20–30 ms    | 15–25 ms           |
+| p99 latency        | 15–25 ms   | 35–50 ms    | 30–45 ms    | 25–40 ms           |
+| Error rate         | 0%         | ~1%         | ~2–5%       | <1%                |
+| Rate-limited (429) | 0%         | ~10–12%     | ~15–20%     | ~8–10%             |
+
+### Understanding the Metrics
+
+- **Throughput**: Requests per second that completed (200 OK or 429)
+- **p95 latency**: 95% of requests completed within this time
+- **p99 latency**: 99% of requests completed within this time
+- **Rate-limited**: Percentage of requests that hit the 429 rate-limit response
+- **Errors**: Requests that returned 5xx or connection failures
+
+### Custom k6 Test
+
+Edit `k6-load-test.js` to adjust:
+
+```javascript
+// Change proxy URL
+const PROXY_URL = __ENV.PROXY_URL || "http://localhost:8080";
+
+// Modify scenarios — e.g., more aggressive ramp-up
+stages: [
+  { duration: "30s", target: 200 }, // ← faster ramp
+  { duration: "2m", target: 200 },
+  { duration: "1m", target: 0 },
+];
+```
+
+Or run with environment variables:
+
+```bash
+PROXY_URL=http://192.168.1.100:8080 k6 run k6-load-test.js --scenario load
+```
+
+### k6 Output Files
+
+After each test run, results are saved to `k6-results-{scenario}.json`:
+
+```bash
+ls -lh k6-results-*.json
+# -rw-r--r--  k6-results-load.json (3.2 MB)
+```
+
+View the JSON summary:
+
+```bash
+cat k6-results-load.json | jq '.metrics | keys' | head -20
+```
+
+Or use k6's output options:
+
+```bash
+# Generate HTML report (requires k6 extension)
+k6 run k6-load-test.js --scenario load --out json=report.json
+
+# Push results to Prometheus or InfluxDB (advanced)
+k6 run k6-load-test.js --out prometheus=http://prometheus:9090
+```
 
 ---
 

@@ -48,6 +48,11 @@ var (
 		Help:    "Histogram of request durations in seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"backend"})
+	// responses per status code (200, 429, 503, 502, ...)
+	responsesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gopherproxy_responses_total",
+		Help: "The total number of responses broken down by HTTP status code",
+	}, []string{"status"})
 )
 
 // --- STRUCTURED LOGGER ---
@@ -57,7 +62,7 @@ var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 
 // --- PER-IP RATE LIMITER ---
 type ipRateLimiter struct {
-	limiters sync.Map
+	limiters sync.Map // map[string]*limiterEntry
 	r        rate.Limit
 	b        int
 }
@@ -66,9 +71,46 @@ func newIPRateLimiter(r rate.Limit, b int) *ipRateLimiter {
 	return &ipRateLimiter{r: r, b: b}
 }
 
+type limiterEntry struct {
+	L       *rate.Limiter
+	lastSeen int64 // unix nano
+}
+
 func (i *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
-	val, _ := i.limiters.LoadOrStore(ip, rate.NewLimiter(i.r, i.b))
-	return val.(*rate.Limiter)
+	now := time.Now().UnixNano()
+	v, loaded := i.limiters.LoadOrStore(ip, &limiterEntry{L: rate.NewLimiter(i.r, i.b), lastSeen: now})
+	e := v.(*limiterEntry)
+	if loaded {
+		// update lastSeen
+		atomic.StoreInt64(&e.lastSeen, now)
+	}
+	return e.L
+}
+
+// janitor removes stale limiter entries that haven't been seen for ttl duration
+func (i *ipRateLimiter) startJanitor(ctx context.Context, ttl time.Duration, interval time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cutoff := time.Now().Add(-ttl).UnixNano()
+				i.limiters.Range(func(key, value interface{}) bool {
+					e := value.(*limiterEntry)
+					if atomic.LoadInt64(&e.lastSeen) < cutoff {
+						i.limiters.Delete(key)
+					}
+					return true
+				})
+			}
+		}
+	}()
 }
 
 func (i *ipRateLimiter) limitMiddleware(next http.Handler) http.Handler {
@@ -109,6 +151,8 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			"status", rw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
+		// record response status metric
+		responsesTotal.WithLabelValues(fmt.Sprintf("%d", rw.status)).Inc()
 	})
 }
 
@@ -323,6 +367,19 @@ func main() {
 	// ── 7. Proxy handler ────────────────────────────────────────────────────
 	proxyPort := getEnv("PROXY_PORT", "8080")
 	ipLimiter := newIPRateLimiter(rate.Every(500*time.Millisecond), 5)
+	// start limiter janitor to evict stale per-IP limiters
+	limiterTTLStr := getEnv("LIMITER_TTL", "10m")
+	limiterIntervalStr := getEnv("LIMITER_JANITOR_INTERVAL", "1m")
+	if ttl, err := time.ParseDuration(limiterTTLStr); err == nil && ttl > 0 {
+		interval := time.Minute
+		if iv, err := time.ParseDuration(limiterIntervalStr); err == nil && iv > 0 {
+			interval = iv
+		}
+		ipLimiter.startJanitor(rootCtx, ttl, interval)
+		logger.Info("started limiter janitor", "ttl", ttl.String(), "interval", interval.String())
+	} else {
+		logger.Info("limiter janitor disabled or invalid LIMITER_TTL", "value", limiterTTLStr)
+	}
 
 	lbHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peer := pool.GetNextPeer()

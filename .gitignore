@@ -35,6 +35,13 @@ go.work.sum
 grafana_data/
 redis_data/
 
+# k6 load test output
+k6-results-*.json
+k6-results/
+load-test-results/
+summary.json
+
+
 #Os files
 .DS_Store
 Thumbs.db
