@@ -4,13 +4,10 @@
 
 [![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev) [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docs.docker.com/compose/) [![Redis](https://img.shields.io/badge/Redis-7.4-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io) [![Prometheus](https://img.shields.io/badge/Prometheus-v3.2.1-E6522C?style=flat-square&logo=prometheus&logoColor=white)](https://prometheus.io) [![Grafana](https://img.shields.io/badge/Grafana-11.6.0-F46800?style=flat-square&logo=grafana&logoColor=white)](https://grafana.com) [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-![Logo](assets/logo.png)
-
----
 
 ## Overview
 
-GopherProxy is a **reverse proxy** (Data Plane) that load-balances traffic across a dynamic pool of backends using round-robin. Its companion, **Sentinel** (Control Plane), continuously TCP-probes each backend and updates a **Redis Set** as the live source of truth. The proxy polls Redis every 5 seconds and updates its pool — no restarts required when backends come or go.
+GopherProxy is a **reverse proxy** (Data Plane) that load-balances traffic across a dynamic pool of backends using round-robin. Its companion, **Sentinel** (Control Plane), continuously TCP-probes each backend and updates a **Redis Set** as the live source of truth. The proxy polls Redis every 5 seconds and updates its pool - no restarts required when backends come or go.
 
 The entire stack ships as a single `docker compose up` with Prometheus scraping metrics every 15 s and a **pre-provisioned Grafana dashboard** that auto-loads on first boot.
 
@@ -56,7 +53,7 @@ flowchart LR
 | Service         | Role                                        | Ports (host)                     |
 | --------------- | ------------------------------------------- | -------------------------------- |
 | **GopherProxy** | Reverse proxy · rate limiting · metrics     | `8080` (proxy), `2112` (metrics) |
-| **Sentinel**    | TCP health prober · Redis registry writer   | — (internal)                     |
+| **Sentinel**    | TCP health prober · Redis registry writer   | - (internal)                     |
 | **Redis**       | Live backend set (`gopher_backends`)        | `16379` → `6379`                 |
 | **Prometheus**  | Scrapes `/metrics` · stores 15 days of data | `9090`                           |
 | **Grafana**     | Pre-provisioned dashboard · no manual setup | `3000`                           |
@@ -67,31 +64,31 @@ flowchart LR
 
 ### Proxy (Data Plane)
 
-- **Round-robin load balancing** with dead-backend skip — `sync/atomic` counter + `sync.RWMutex` pool
-- **Per-IP rate limiting** (Token Bucket) — each client IP gets its own isolated `rate.Limiter` via `sync.Map`; burst of 5, replenishes at 2 req/s
-- **Dynamic backend pool** — polls Redis `SMembers` every 5 s, registers new backends without restart
-- **Local TCP health check** — probes every 10 s with `context`-aware `DialContext`; logs state transitions (recovered / went down)
-- **Structured JSON logging** (`log/slog`) — every request logged with `method`, `path`, `remote_addr`, `status`, `duration_ms`
-- **Graceful shutdown** — 30 s drain on `SIGTERM`/`SIGINT`, cancels root context, drains both servers, closes Redis client
-- **Dedicated metrics server** — `/metrics` and `/healthz` on a separate port (`:2112`), never reachable through the proxy path
+- **Round-robin load balancing** with dead-backend skip - `sync/atomic` counter + `sync.RWMutex` pool
+- **Per-IP rate limiting** (Token Bucket) - each client IP gets its own isolated `rate.Limiter` via `sync.Map`; burst of 5, replenishes at 2 req/s
+- **Dynamic backend pool** - polls Redis `SMembers` every 5 s, registers new backends without restart
+- **Local TCP health check** - probes every 10 s with `context`-aware `DialContext`; logs state transitions (recovered / went down)
+- **Structured JSON logging** (`log/slog`) - every request logged with `method`, `path`, `remote_addr`, `status`, `duration_ms`
+- **Graceful shutdown** - 30 s drain on `SIGTERM`/`SIGINT`, cancels root context, drains both servers, closes Redis client
+- **Dedicated metrics server** - `/metrics` and `/healthz` on a separate port (`:2112`), never reachable through the proxy path
 
 ### Sentinel (Control Plane)
 
-- **TCP probe loop** — checks each backend every 2 s with a 1 s dial timeout
-- **Idempotent registry** — `SAdd` on UP, `SRem` on DOWN; only logs on actual state transitions
-- **Runtime target override** — `SENTINEL_TARGETS` env var (comma-separated `host:port`) replaces hard-coded defaults without rebuilding
+- **TCP probe loop** - checks each backend every 2 s with a 1 s dial timeout
+- **Idempotent registry** - `SAdd` on UP, `SRem` on DOWN; only logs on actual state transitions
+- **Runtime target override** - `SENTINEL_TARGETS` env var (comma-separated `host:port`) replaces hard-coded defaults without rebuilding
 
 ### Operations
 
-- **4 Prometheus metrics** —
+- **4 Prometheus metrics** -
   - `gopherproxy_processed_requests_total`, `gopherproxy_dropped_requests_total`, `gopherproxy_active_backends`, `gopherproxy_request_duration_seconds` histogram (per-backend label)
 
-- **7-panel Grafana dashboard** — auto-provisioned; request rate, p50/p95/p99 latency, active backends gauge + timeseries, totals, success rate %
-- **Non-root containers** — fixed UID/GID `1001` (`gopheruser:gophergroup`); `HEALTHCHECK` on every service
-- **Multi-stage Docker build** — `CGO_ENABLED=0`, `-trimpath`, `-s -w`; final image ≈ 13 MB
-- **Version stamped at build time** — `Version` and `Commit` injected via `-ldflags`
-- **Resource limits** on every service — CPU and memory capped in `docker-compose.yml`
-- **Redis persistence** — `appendonly yes`, `appendfsync everysec`, `maxmemory 128 MB` (LRU eviction)
+- **7-panel Grafana dashboard** - auto-provisioned; request rate, p50/p95/p99 latency, active backends gauge + timeseries, totals, success rate %
+- **Non-root containers** - fixed UID/GID `1001` (`gopheruser:gophergroup`); `HEALTHCHECK` on every service
+- **Multi-stage Docker build** - `CGO_ENABLED=0`, `-trimpath`, `-s -w`; final image ≈ 13 MB
+- **Version stamped at build time** - `Version` and `Commit` injected via `-ldflags`
+- **Resource limits** on every service - CPU and memory capped in `docker-compose.yml`
+- **Redis persistence** - `appendonly yes`, `appendfsync everysec`, `maxmemory 128 MB` (LRU eviction)
 
 ---
 
@@ -106,13 +103,13 @@ flowchart LR
 | Go                      | 1.24+ (tests only)      |
 | `make`                  | optional                |
 
-### 1 — Configure environment
+### 1 - Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` — at minimum change `GRAFANA_PASSWORD`:
+Edit `.env` - at minimum change `GRAFANA_PASSWORD`:
 
 ```dotenv
 VERSION=1.0.0
@@ -121,7 +118,7 @@ GRAFANA_PASSWORD=changeme          # ← change this
 SENTINEL_TARGETS=host.docker.internal:8081,host.docker.internal:8082,host.docker.internal:8083
 ```
 
-### 2 — Build & start the stack
+### 2 - Build & start the stack
 
 ```bash
 make up
@@ -138,7 +135,7 @@ gopher-prometheus  up        ✔
 gopher-grafana     up        ✔
 ```
 
-### 3 — Start mock backends _(separate terminal)_
+### 3 - Start mock backends _(separate terminal)_
 
 ```bash
 make mock-backends
@@ -147,10 +144,10 @@ make mock-backends
 
 Sentinel detects them within 2 s and registers them in Redis. The proxy picks them up within the next 5 s poll.
 
-### 4 — Send traffic
+### 4 - Send traffic
 
 ```bash
-# 30 requests, 1/s — stays under rate limit, round-robins across all three backends
+# 30 requests, 1/s - stays under rate limit, round-robins across all three backends
 for i in $(seq 1 30); do curl -s http://localhost:8080/; sleep 1; done
 ```
 
@@ -169,12 +166,12 @@ You will see each response coming from a different backend:
 
 | URL                             | Description                          |
 | ------------------------------- | ------------------------------------ |
-| `http://localhost:8080`         | Proxy — load-balanced entry point    |
-| `http://localhost:2112/healthz` | Liveness probe — returns `ok`        |
+| `http://localhost:8080`         | Proxy - load-balanced entry point    |
+| `http://localhost:2112/healthz` | Liveness probe - returns `ok`        |
 | `http://localhost:2112/metrics` | Raw Prometheus metrics (text format) |
 | `http://localhost:9090`         | Prometheus expression browser        |
 | `http://localhost:9090/targets` | Scrape target health                 |
-| `http://localhost:3000`         | Grafana — **GopherProxy Dashboard**  |
+| `http://localhost:3000`         | Grafana - **GopherProxy Dashboard**  |
 
 > **Grafana login:** `admin` / `admin` (or whatever is set in `.env`)
 
@@ -191,7 +188,7 @@ The proxy uses a **per-IP Token Bucket** limiter:
 | Response when exceeded | `429 Too Many Requests`              |
 | Counter metric         | `gopherproxy_dropped_requests_total` |
 
-Each client IP gets its own isolated bucket stored in a `sync.Map` — a busy IP cannot affect others.
+Each client IP gets its own isolated bucket stored in a `sync.Map` - a busy IP cannot affect others.
 
 ---
 
@@ -204,7 +201,7 @@ All metrics are prefixed `gopherproxy_` and scraped from `:2112/metrics`:
 | `gopherproxy_processed_requests_total` | Counter   | Requests successfully forwarded to a backend          |
 | `gopherproxy_dropped_requests_total`   | Counter   | Requests dropped (rate-limited or no healthy backend) |
 | `gopherproxy_active_backends`          | Gauge     | Number of backends currently marked alive             |
-| `gopherproxy_request_duration_seconds` | Histogram | Latency per backend — labelled `backend="host:port"`  |
+| `gopherproxy_request_duration_seconds` | Histogram | Latency per backend - labelled `backend="host:port"`  |
 
 ### Useful PromQL queries
 
@@ -232,7 +229,7 @@ gopherproxy_active_backends
 
 ## Grafana Dashboard
 
-The dashboard (`grafana/provisioning/dashboards/gopherproxy.json`) is **auto-loaded on first boot** — no manual import needed.
+The dashboard (`grafana/provisioning/dashboards/gopherproxy.json`) is **auto-loaded on first boot** - no manual import needed.
 
 | Panel                    | Query                                                              |
 | ------------------------ | ------------------------------------------------------------------ |
@@ -276,7 +273,7 @@ make test
 # go test -race -count=1 ./...
 ```
 
-**22 unit tests** across both packages — all run with the race detector:
+**22 unit tests** across both packages - all run with the race detector:
 
 | Package       | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -312,10 +309,10 @@ curl -s -X POST http://localhost:9090/-/reload
 
 ```
 .
-├── main.go                        # GopherProxy — Data Plane
+├── main.go                        # GopherProxy - Data Plane
 ├── main_test.go                   # 17 proxy unit tests
 ├── sentinel/
-│   ├── main.go                    # Sentinel — Control Plane
+│   ├── main.go                    # Sentinel - Control Plane
 │   └── main_test.go               # 5 sentinel unit tests
 ├── Dockerfile                     # Multi-stage proxy image
 ├── Dockerfile.sentinel            # Multi-stage sentinel image
@@ -375,7 +372,7 @@ sudo apt-get install k6
 
 > **Note:** Keep the full stack running (`make up` + `make mock-backends`) in one terminal before running k6 tests.
 
-#### 1. Smoke Test (quick check — 30s)
+#### 1. Smoke Test (quick check - 30s)
 
 ```bash
 make k6-smoke
@@ -395,7 +392,7 @@ make k6-load
 # ✔ Monitors rate-limiter rejection rate (~12% under spike)
 ```
 
-#### 3. Spike Test (sudden load jump — 3+ minutes)
+#### 3. Spike Test (sudden load jump - 3+ minutes)
 
 ```bash
 make k6-spike
@@ -444,7 +441,7 @@ Edit `k6-load-test.js` to adjust:
 // Change proxy URL
 const PROXY_URL = __ENV.PROXY_URL || "http://localhost:8080";
 
-// Modify scenarios — e.g., more aggressive ramp-up
+// Modify scenarios - e.g., more aggressive ramp-up
 stages: [
   { duration: "30s", target: 200 }, // ← faster ramp
   { duration: "2m", target: 200 },
@@ -487,11 +484,11 @@ k6 run k6-load-test.js --out prometheus=http://prometheus:9090
 
 ## Production Notes
 
-- **Redis port 16379** is exposed to the host for local debugging only — remove the `ports:` mapping before any real deployment
+- **Redis port 16379** is exposed to the host for local debugging only - remove the `ports:` mapping before any real deployment
 - **Grafana sign-up** is disabled (`GF_USERS_ALLOW_SIGN_UP=false`) and analytics reporting is off
 - **Prometheus retains 15 days** of data in the `prometheus_data` named volume
 - **All containers run as non-root** (UID/GID `1001`) and have CPU + memory limits set
-- **Sentinel `kill -0 1` health check** — more reliable than `pgrep` on BusyBox/Alpine, where the full path (`/app/sentinel`) does not match an exact-name `pgrep -x` search
+- **Sentinel `kill -0 1` health check** - more reliable than `pgrep` on BusyBox/Alpine, where the full path (`/app/sentinel`) does not match an exact-name `pgrep -x` search
 
 ---
 
@@ -501,7 +498,7 @@ Real issues hit during development, recorded here as reference:
 
 | Symptom                            | Root Cause                                                                                    | Fix                                                                       |
 | ---------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Metrics showed 0 traffic           | `pool` variable shadowed inside handler — handler read an empty instance                      | Removed `:=` re-declaration; handler closes over the outer `pool` pointer |
+| Metrics showed 0 traffic           | `pool` variable shadowed inside handler - handler read an empty instance                      | Removed `:=` re-declaration; handler closes over the outer `pool` pointer |
 | `bind: forbidden` on port `6379`   | Hyper-V reserved the port range on Windows                                                    | Mapped Redis to high port `16379` on the host                             |
 | Proxy crashed on empty registry    | Modulo by zero when `len(backends) == 0`                                                      | Defensive `if l == 0 { return nil }` before the `% l` operation           |
 | `gopher-sentinel` always unhealthy | `pgrep -x sentinel` on BusyBox matches full path, not basename                                | Replaced with `kill -0 1`                                                 |
@@ -511,6 +508,6 @@ Real issues hit during development, recorded here as reference:
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT - see [LICENSE](LICENSE)
 
 **Author:** Yogesh T · [GitHub @YogeshT22](https://github.com/YogeshT22)
