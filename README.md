@@ -88,6 +88,7 @@ GopherProxy sits in front of multiple HTTP backends and:
 │   ├── server1/             # Python http.server on :8081
 │   ├── server2/             # Python http.server on :8082
 │   └── server3/             # Python http.server on :8083
+├── frontend/                # Next.js + TypeScript observability dashboard (:3001)
 ├── Dockerfile               # Multi-stage build (proxy + sentinel via APP_NAME arg)
 ├── Dockerfile.sentinel      # Sentinel-specific build
 ├── docker-compose.yml       # Full stack: proxy, sentinel, redis, prometheus, grafana
@@ -142,7 +143,35 @@ redis-cli -p 16379 SADD gopher_backends \
 
 ---
 
-## Load Testing
+## Frontend Dashboard (Next.js)
+
+A Next.js + TypeScript observability dashboard is included in the `frontend/` folder. It reads live proxy metrics directly from the Prometheus HTTP API.
+
+**Prerequisites:** Node.js 18+
+
+```bash
+# Step 1 — start the full stack first
+make up
+
+# Step 2 — start the dashboard
+cd frontend
+npm install
+npx next dev --port 3001
+
+# Open: http://localhost:3001
+```
+
+> Port 3001 is used because Grafana already occupies port 3000.
+
+**What it shows:**
+- GopherProxy + Prometheus liveness status
+- Active backends, total requests proxied, dropped requests (rate-limited / 503)
+- P95 latency (via PromQL `histogram_quantile`)
+- Responses by HTTP status code
+- Auto-refreshes every 10 seconds
+
+---
+
 
 All scenarios use `k6-load-test.js`:
 
@@ -165,6 +194,7 @@ make k6-rps200     # arrival-rate: 200 req/s for 2 min
 | `http://localhost:9090`         | Prometheus expression browser        |
 | `http://localhost:9090/targets` | Scrape target health                 |
 | `http://localhost:3000`         | Grafana - **GopherProxy Dashboard**  |
+| `http://localhost:3001`         | Next.js observability dashboard      |
 
 > **Grafana login:** `admin` / `admin` (or whatever is set in `.env`)
 

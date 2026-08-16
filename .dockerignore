@@ -31,3 +31,10 @@ prometheus.yml
 Dockerfile
 docker-compose.yml
 Makefile
+
+# ── Frontend (Next.js) — not part of the Go images ───────────────────────
+frontend/
+
+# ── k6 result files — large JSON output files from load tests ─────────────
+k6-results*.json
+summary.json
