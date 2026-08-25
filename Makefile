@@ -57,33 +57,36 @@ clean: ## Remove dangling Docker images and build cache
 
 k6-smoke: ## Quick k6 load test (10 users, 30s) — smoke test
 	@echo "Starting k6 smoke test..."
-	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario smoke --out json=k6-results-smoke.json; else k6 run --vus 10 --duration 30s k6-load-test.js --out json=k6-results-smoke.json; fi'
+	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario smoke --summary-export=k6-summary-smoke.json; else k6 run --vus 10 --duration 30s --summary-export=k6-summary-smoke.json k6-load-test.js; fi'
 
 k6-load: ## Full k6 load test (ramp to 500 users over ~6min) — realistic load
 	@echo "Starting k6 full load test (this may take ~6 minutes)..."
-	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario load --out json=k6-results-load.json; else k6 run --vus 500 --duration 6m k6-load-test.js --out json=k6-results-load.json; fi'
+	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario load --summary-export=k6-summary-load.json; else k6 run --vus 500 --duration 6m --summary-export=k6-summary-load.json k6-load-test.js; fi'
 
 k6-spike: ## k6 spike test (sudden jump to 500 users) — stress test
 	@echo "Starting k6 spike test..."
-	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario spike --out json=k6-results-spike.json; else k6 run --vus 500 --duration 3m k6-load-test.js --out json=k6-results-spike.json; fi'
+	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario spike --summary-export=k6-summary-spike.json; else k6 run --vus 500 --duration 3m --summary-export=k6-summary-spike.json k6-load-test.js; fi'
 
 k6-sustained: ## k6 sustained test (200 concurrent users for 5min)
 	@echo "Starting k6 sustained load test..."
-	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario sustained --out json=k6-results-sustained.json; else k6 run --vus 200 --duration 5m k6-load-test.js --out json=k6-results-sustained.json; fi'
+	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario sustained --summary-export=k6-summary-sustained.json; else k6 run --vus 200 --duration 5m --summary-export=k6-summary-sustained.json k6-load-test.js; fi'
 
 # RPS-targeted scenarios (arrival-rate)
 k6-rps200: ## k6 arrival-rate test targeting 200 req/s for 2 minutes
 	@echo "Starting k6 arrival-rate test: 200 RPS for 2 minutes..."
-	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario rps200 --out json=k6-results-rps200.json; else k6 run --vus 200 --duration 2m k6-load-test.js --out json=k6-results-rps200.json; fi'
+	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario rps200 --summary-export=k6-summary-rps200.json; else k6 run --vus 200 --duration 2m --summary-export=k6-summary-rps200.json k6-load-test.js; fi'
 
 k6-rps4200: ## k6 arrival-rate test targeting 4200 req/s for 2 minutes (distributed)
 	@echo "Starting k6 arrival-rate test: 4200 RPS for 2 minutes (requires distributed clients)..."
-	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario rps4200 --out json=k6-results-rps4200.json; else k6 run --vus 2000 --duration 2m k6-load-test.js --out json=k6-results-rps4200.json; fi'
+	@sh -c 'if k6 --help 2>&1 | grep -q -- "--scenario"; then k6 run k6-load-test.js --scenario rps4200 --summary-export=k6-summary-rps4200.json; else k6 run --vus 2000 --duration 2m --summary-export=k6-summary-rps4200.json k6-load-test.js; fi'
 
 k6-results: ## Display latest k6 test results (JSON summary)
-	@if [ -f k6-results-load.json ]; then \
-		echo "Latest k6 results:"; \
-		cat k6-results-load.json | jq '.metrics | keys' 2>/dev/null || echo "Install jq for JSON parsing"; \
+	@if [ -f k6-summary-load.json ]; then \
+		echo "Latest k6 results (k6-summary-load.json):"; \
+		cat k6-summary-load.json | jq '.metrics | keys' 2>/dev/null || echo "Install jq for JSON parsing"; \
+	elif [ -f summary.json ]; then \
+		echo "Latest k6 results (summary.json):"; \
+		cat summary.json | jq '.metrics | keys' 2>/dev/null || echo "Install jq for JSON parsing"; \
 	else \
-		echo "No k6 results found. Run 'make k6-load' first."; \
+		echo "No k6 results found. Run 'make k6-load' or 'make k6-smoke' first."; \
 	fi

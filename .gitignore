@@ -37,6 +37,8 @@ redis_data/
 
 # k6 load test output
 k6-results-*.json
+k6-summary-*.json
+*.json.gz
 k6-results/
 load-test-results/
 summary.json
